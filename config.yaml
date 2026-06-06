@@ -1,0 +1,29 @@
+embedding:
+  model_name: "paraphrase-multilingual-MiniLM-L12-v2"
+  device: "cpu"
+
+vector_store:
+  persist_directory: "./data/chroma"
+  collection_name: "knowledge"
+
+llm:
+  provider: "openai"
+  model: "gpt-4"
+  api_key: "${OPENAI_API_KEY}"
+  temperature: 0.7
+  max_tokens: 2048
+
+text_splitter:
+  chunk_size: 500
+  chunk_overlap: 50
+
+retrieval:
+  top_k: 5
+
+documents:
+  directory: "./data/documents"
+  supported_formats:
+    - ".pdf"
+    - ".docx"
+    - ".txt"
+    - ".md"
