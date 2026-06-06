@@ -2,9 +2,14 @@
 """Knowledge Agent - 主入口"""
 
 import argparse
+import io
 import logging
 import sys
 from pathlib import Path
+
+# Windows终端UTF-8兼容
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 # 确保项目根目录在path中
 ROOT_DIR = Path(__file__).parent
@@ -26,11 +31,21 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def check_config() -> bool:
+    """检查配置是否完整，不完整时提示并返回False"""
+    errors = config.validate_llm()
+    if errors:
+        config.print_status()
+        return False
+    return True
+
+
 def build_agent() -> Agent:
     """构建Agent实例"""
     embedding_model = EmbeddingModel(
-        model_name=config.get("embedding.model_name"),
-        device=config.get("embedding.device"),
+        base_url=config.get("embedding.base_url") or config.get("llm.base_url"),
+        api_key=config.get("embedding.api_key") or config.get("llm.api_key"),
+        model=config.get("embedding.model", ""),
     )
     vector_store = VectorStore(
         persist_directory=config.get("vector_store.persist_directory"),
@@ -42,11 +57,12 @@ def build_agent() -> Agent:
         top_k=config.get("retrieval.top_k"),
     )
     llm = LLMInterface(
-        provider=config.get("llm.provider"),
-        model=config.get("llm.model"),
+        base_url=config.get("llm.base_url"),
         api_key=config.get("llm.api_key"),
+        model=config.get("llm.model"),
         temperature=config.get("llm.temperature"),
         max_tokens=config.get("llm.max_tokens"),
+        timeout=config.get("llm.timeout", 60),
     )
     return Agent(retriever=retriever, llm=llm)
 
@@ -59,8 +75,9 @@ def cmd_index(args):
         chunk_overlap=config.get("text_splitter.chunk_overlap"),
     )
     embedding_model = EmbeddingModel(
-        model_name=config.get("embedding.model_name"),
-        device=config.get("embedding.device"),
+        base_url=config.get("embedding.base_url") or config.get("llm.base_url"),
+        api_key=config.get("embedding.api_key") or config.get("llm.api_key"),
+        model=config.get("embedding.model", ""),
     )
     vector_store = VectorStore(
         persist_directory=config.get("vector_store.persist_directory"),
@@ -93,6 +110,8 @@ def cmd_index(args):
 
 def cmd_ask(args):
     """提问"""
+    if not check_config():
+        return
     agent = build_agent()
     result = agent.ask(args.question)
     print(f"\n📋 回答:\n{result['answer']}")
@@ -104,6 +123,8 @@ def cmd_ask(args):
 
 def cmd_chat(args):
     """交互式对话"""
+    if not check_config():
+        return
     agent = build_agent()
     print("🧠 Knowledge Agent 交互模式 (输入 'quit' 退出, 'clear' 清空历史)")
     print("-" * 50)
@@ -142,9 +163,18 @@ def cmd_web(args):
     subprocess.run(["streamlit", "run", str(web_app), "--server.port", str(port)])
 
 
+def cmd_config(args):
+    """显示当前配置状态"""
+    config.print_status()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Knowledge Agent - 私有文件检索智能助手")
     subparsers = parser.add_subparsers(dest="command", help="可用命令")
+
+    # config 命令
+    config_parser = subparsers.add_parser("config", help="查看配置状态")
+    config_parser.set_defaults(func=cmd_config)
 
     # index 命令
     index_parser = subparsers.add_parser("index", help="索引文档")

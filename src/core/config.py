@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, List
 
 import yaml
 from dotenv import load_dotenv
@@ -13,19 +13,21 @@ ROOT_DIR = Path(__file__).parent.parent.parent
 # 默认配置
 DEFAULT_CONFIG = {
     "embedding": {
-        "model_name": "paraphrase-multilingual-MiniLM-L12-v2",
-        "device": "cpu",
+        "base_url": "",   # 嵌入API地址，留空则与LLM共用
+        "api_key": "",    # 嵌入API密钥，留空则与LLM共用
+        "model": "",      # 嵌入模型名，留空由服务端决定
     },
     "vector_store": {
         "persist_directory": "./data/chroma",
         "collection_name": "knowledge",
     },
     "llm": {
-        "provider": "openai",
-        "model": "gpt-4",
+        "base_url": "",
         "api_key": "",
+        "model": "",
         "temperature": 0.7,
         "max_tokens": 2048,
+        "timeout": 60,
     },
     "text_splitter": {
         "chunk_size": 500,
@@ -94,7 +96,7 @@ class Config:
         return obj
 
     def get(self, key: str, default: Any = None) -> Any:
-        """获取配置值，支持点号分隔的嵌套key，如 'llm.provider'"""
+        """获取配置值，支持点号分隔的嵌套key，如 'llm.base_url'"""
         keys = key.split(".")
         value = self._config
         for k in keys:
@@ -113,6 +115,52 @@ class Config:
     def reload(self):
         """重新加载配置"""
         self._load()
+
+    def validate_llm(self) -> List[str]:
+        """验证LLM配置，返回缺失项列表"""
+        errors = []
+        if not self.get("llm.base_url"):
+            errors.append("LLM_BASE_URL (API调用地址)")
+        if not self.get("llm.api_key"):
+            errors.append("LLM_API_KEY (API密钥)")
+        return errors
+
+    def print_status(self):
+        """打印当前配置状态"""
+        print("\n" + "=" * 50)
+        print("📋 当前配置")
+        print("=" * 50)
+
+        # LLM
+        base_url = self.get("llm.base_url", "")
+        api_key = self.get("llm.api_key", "")
+        model = self.get("llm.model", "")
+
+        print(f"\n🤖 LLM:")
+        print(f"   地址: {base_url or '❌ 未配置'}")
+        print(f"   密钥: {'✅ 已配置' if api_key else '❌ 未配置'}")
+        print(f"   模型: {model or '(服务端默认)'}")
+
+        # 嵌入模型
+        print(f"\n📐 嵌入模型:")
+        print(f"   模型: {self.get('embedding.model_name')}")
+        print(f"   设备: {self.get('embedding.device')}")
+
+        # 向量库
+        print(f"\n💾 向量库:")
+        print(f"   路径: {self.get('vector_store.persist_directory')}")
+        print(f"   集合: {self.get('vector_store.collection_name')}")
+
+        # 验证
+        errors = self.validate_llm()
+        if errors:
+            print(f"\n⚠️  缺少以下配置，请在 .env 文件中填写:")
+            for err in errors:
+                print(f"   - {err}")
+        else:
+            print(f"\n✅ 配置完整，可以启动")
+
+        print("=" * 50 + "\n")
 
 
 # 全局配置实例

@@ -1,17 +1,19 @@
 embedding:
-  model_name: "paraphrase-multilingual-MiniLM-L12-v2"
-  device: "cpu"
+  base_url: ""     # 嵌入API地址，留空则与LLM共用
+  api_key: ""      # 嵌入API密钥，留空则与LLM共用
+  model: ""        # 嵌入模型名，留空由服务端决定
 
 vector_store:
   persist_directory: "./data/chroma"
   collection_name: "knowledge"
 
 llm:
-  provider: "openai"
-  model: "gpt-4"
-  api_key: "${OPENAI_API_KEY}"
+  base_url: "${LLM_BASE_URL}"       # API调用地址，如 https://api.deepseek.com
+  api_key: "${LLM_API_KEY}"         # API密钥
+  model: "${LLM_MODEL}"             # 模型名称（不填则由服务端默认决定）
   temperature: 0.7
   max_tokens: 2048
+  timeout: 60
 
 text_splitter:
   chunk_size: 500
