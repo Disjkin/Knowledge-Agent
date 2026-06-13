@@ -163,12 +163,17 @@ def index_documents(uploaded_files, base_url: str, api_key: str) -> int:
     if not all_chunks:
         return 0
 
-    # 阶段2：向量化（带进度条）
+    # 阶段2：向量化（带实时进度条）
     texts = [c.content for c in all_chunks]
     metadatas = [c.metadata for c in all_chunks]
 
     progress_bar = st.progress(0, text="🔢 正在向量化文本...")
-    embeddings = embedding_model.embed(texts, show_progress=False)
+
+    def update_progress(done, total):
+        pct = int(done / total * 60)  # 向量化占 0~60%
+        progress_bar.progress(pct, text=f"🔢 正在向量化文本... {done}/{total}")
+
+    embeddings = embedding_model.embed(texts, show_progress=False, progress_callback=update_progress)
     progress_bar.progress(60, text="📥 正在存入向量库...")
 
     # 阶段3：存储
