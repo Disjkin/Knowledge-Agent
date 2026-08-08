@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     reranker_model: str = "BAAI/bge-reranker-base"
     reranker_top_k: int = 5                        # 重排后返回数量
     rerank_candidate_k: int = 20                   # 重排前候选池大小
+    enable_unified_reranker: bool = True           # 网搜后对 KB+web 统一 cross-encoder 重排
 
     # 路径（相对项目根）
     data_dir: str = "data"

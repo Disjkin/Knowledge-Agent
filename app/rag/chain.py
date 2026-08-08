@@ -1,6 +1,6 @@
 """RAG 链 + 流式输出。
 事件序列：sources(kb) -> [status -> sources(web)] -> reasoning × N -> token × N -> done （异常时 error）。
-trace 步骤：query_rewrite -> hybrid_retrieve -> rerank -> [web_search] -> llm_stream -> reply。
+trace 步骤：query_rewrite -> hybrid_retrieve -> rerank -> [web_search -> unified_rerank] -> llm_stream -> reply。
 """
 import statistics
 from typing import AsyncGenerator, List, Tuple
@@ -22,26 +22,21 @@ SYSTEM_PROMPT = """你是知识库助手。请严格依据下面【参考资料�
 5. 若使用了网络搜索资料，回答末尾需注明"以上内容包含网络搜索结果，请注意甄别时效性"。"""
 
 # ── 上下文格式化 ──
-def format_context(kb_chunks: List[Document], web_chunks: List[Document]) -> str:
-    """把本地知识库片段和网络搜索片段拼成带编号的参考资料文本。"""
-    kb_pieces: list[str] = []
-    for i, c in enumerate(kb_chunks, 1):
-        src = c.metadata.get("source", "未知")
-        cid = c.metadata.get("chunk_id", i - 1)
-        kb_pieces.append(f"[片段 {i}] 来源: {src}#{cid}\n{c.page_content}")
-
-    web_pieces: list[str] = []
-    for i, c in enumerate(web_chunks, 1):
-        title = c.metadata.get("source", "未知")
-        url = c.metadata.get("url", "")
-        web_pieces.append(f"[网络资料 {i}] 来源: {title} ({url})\n{c.page_content}")
-
-    sections: list[str] = []
-    if kb_pieces:
-        sections.append("【本地知识库资料】\n" + "\n\n".join(kb_pieces))
-    if web_pieces:
-        sections.append("【网络搜索资料】\n" + "\n\n".join(web_pieces))
-    return "\n\n".join(sections)
+def format_context(docs: List[Document]) -> str:
+    """按全局相关性顺序拼接参考资料，本地与网搜交错，每条标注类型。"""
+    if not docs:
+        return ""
+    pieces: list[str] = []
+    for i, c in enumerate(docs, 1):
+        if c.metadata.get("type") == "web":
+            title = c.metadata.get("source", "未知")
+            url = c.metadata.get("url", "")
+            pieces.append(f"[网络资料 {i}] 来源: {title} ({url})\n{c.page_content}")
+        else:
+            src = c.metadata.get("source", "未知")
+            cid = c.metadata.get("chunk_id", i - 1)
+            pieces.append(f"[本地片段 {i}] 来源: {src}#{cid}\n{c.page_content}")
+    return "【参考资料】（按相关性排序，含本地与网络）\n" + "\n\n".join(pieces)
 
 
 def chunks_to_sources(chunks: List[Document]) -> List[dict]:
@@ -269,6 +264,7 @@ async def stream_chat(
 
         web_docs: List[Document] = []
         used_web_search = False
+        final_docs: List[Document] | None = None
         if need_web:
             yield ("status", {
                 "stage": "web_search",
@@ -295,14 +291,48 @@ async def stream_chat(
                 })
                 used_web_search = True
 
+            # ════════════════════════════════════════
+            # 步骤4.5: KB + 网搜统一重排（同一 cross-encoder 评分，全局相关性排序）
+            # ════════════════════════════════════════
+            if settings.enable_unified_reranker and settings.enable_reranker and web_docs:
+                with tracer.step("unified_rerank", {
+                    "model": settings.reranker_model,
+                    "kb_count": len(kb_docs),
+                    "web_count": len(web_docs),
+                }) as step:
+                    from app.rag.reranker import rerank
+                    merged = kb_docs + web_docs
+                    unified = rerank(question, merged, top_k=len(merged))
+                    final_docs = []
+                    for doc, score in unified:
+                        doc.metadata["score"] = round(float(score), 4)
+                        final_docs.append(doc)
+                    # 按类型拆回两张来源卡片用子集（均按全局相关性排序）
+                    kb_docs = [d for d in final_docs if d.metadata.get("type") == "kb"]
+                    web_docs = [d for d in final_docs if d.metadata.get("type") == "web"]
+                    step.set_outputs({
+                        "total": len(final_docs),
+                        "ranking": [
+                            {
+                                "type": d.metadata.get("type"),
+                                "source": d.metadata.get("source", "?"),
+                                "score": d.metadata.get("score"),
+                                "snippet": d.page_content[:120],
+                            }
+                            for d in final_docs
+                        ],
+                    })
+
             if web_docs:
                 yield ("sources", {"chunks": chunks_to_sources(web_docs), "type": "web"})
 
         # ════════════════════════════════════════
         # 步骤5: 合并上下文 + LLM 流式
         # ════════════════════════════════════════
-        all_docs = kb_docs + web_docs
-        if not all_docs:
+        # 全局有序上下文：统一重排后为交错顺序；否则 KB+web 直接拼接
+        if final_docs is None:
+            final_docs = kb_docs + web_docs
+        if not final_docs:
             not_found_msg = "知识库中未找到相关信息。"
             yield ("token", not_found_msg)
             with tracer.step("reply", {
@@ -322,7 +352,7 @@ async def stream_chat(
             })
             return
 
-        context_text = format_context(kb_docs, web_docs)
+        context_text = format_context(final_docs)
 
         prompt = ChatPromptTemplate.from_messages(
             [
