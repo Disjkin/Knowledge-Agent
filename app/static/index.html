@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>个人知识库助手</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- 侧栏：知识库文档 -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <h2>📚 知识库</h2>
+        <div class="sidebar-actions">
+          <button id="btn-ingest" class="btn btn-ghost" title="增量重建：未改动文件自动跳过">🔄 重建</button>
+          <button id="btn-clear-ingest" class="btn btn-icon btn-danger" title="清空全部向量后从头重新索引">🗑️</button>
+        </div>
+      </div>
+      <ul id="doc-list" class="doc-list">
+        <li class="doc-empty">加载中…</li>
+      </ul>
+      <div class="sidebar-footer">
+        <button id="btn-add-doc" class="btn btn-primary btn-block">+ 添加文档</button>
+        <p class="hint">把文件放入 data/ 目录后点"重建"</p>
+      </div>
+    </aside>
+
+    <!-- 移动端侧栏遮罩 -->
+    <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+    <!-- 主区：聊天 -->
+    <main class="chat">
+      <header class="chat-header">
+        <div class="header-left">
+          <button id="btn-menu" class="btn btn-icon menu-btn" title="菜单">☰</button>
+          <h1>个人知识库助手</h1>
+        </div>
+        <div class="header-right">
+          <span id="model-badge" class="badge" title="">模型: …</span>
+          <button id="btn-settings" class="btn btn-icon" title="模型设置">⚙️</button>
+        </div>
+      </header>
+
+      <div id="messages" class="messages">
+        <div class="msg assistant">
+          <div class="bubble">
+            你好！我是你的知识库助手 🤖。把文档放进 <code>data/</code> 目录并点"重建索引"，我就能根据它们回答你的问题。
+          </div>
+        </div>
+      </div>
+
+      <form id="chat-form" class="chat-input">
+        <div class="composer">
+          <textarea
+            id="input"
+            placeholder="给知识库助手发送消息"
+            rows="1"
+          ></textarea>
+          <div class="composer-bar">
+            <div class="composer-tools">
+              <button type="button" id="btn-deep-think" class="tool-pill" aria-pressed="false"
+                title="深度思考：使用推理模型生成（需在 .env 配置 OPENAI_REASONING_MODEL，如 deepseek-reasoner）">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15z"/></svg>
+                深度思考
+              </button>
+              <button type="button" id="btn-web-search" class="tool-pill active" aria-pressed="true"
+                title="智能搜索：本地知识库找不到时自动联网搜索；关闭后仅查本地知识库">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.6 3.9 5.7 3.9 9s-1.4 6.4-3.9 9c-2.5-2.6-3.9-5.7-3.9-9s1.4-6.4 3.9-9z"/></svg>
+                智能搜索
+              </button>
+            </div>
+            <div class="composer-actions">
+              <button type="button" id="btn-attach" class="attach-btn" title="添加文档到知识库（打开 data/ 目录）" aria-label="添加文档">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.4 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              </button>
+              <button id="btn-send" class="send-btn" type="submit" title="发送" aria-label="发送">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </form>
+    </main>
+  </div>
+
+  <!-- 设置面板 -->
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-mask"></div>
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>⚙️ 模型设置</h2>
+        <button id="btn-close-settings" class="btn btn-icon" title="关闭">✕</button>
+      </div>
+      <p class="modal-tip">填写后保存，无需重启即刻生效。当前配置来自 .env。</p>
+
+      <label>模型提供商</label>
+      <select id="set-provider">
+        <option value="openai">OpenAI 兼容（DeepSeek / LongCat / 智谱 / 通义…）</option>
+        <option value="anthropic">Anthropic Claude</option>
+      </select>
+
+      <label>API Key</label>
+      <input id="set-apikey" type="password" placeholder="sk-..." autocomplete="off" />
+
+      <label id="set-baseurl-label">Base URL（openai 兼容时填写）</label>
+      <input id="set-baseurl" type="text" placeholder="https://api.deepseek.com" />
+
+      <label>模型名称</label>
+      <input id="set-model" type="text" placeholder="deepseek-chat" />
+
+      <div class="modal-actions">
+        <button id="btn-test" class="btn">测试连接</button>
+        <button id="btn-save-settings" class="btn btn-primary">保存</button>
+      </div>
+      <div id="settings-msg" class="settings-msg"></div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

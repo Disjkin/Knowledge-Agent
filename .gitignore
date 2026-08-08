@@ -1,0 +1,51 @@
+# ── 配置（含密钥，绝不提交）──
+.env
+.env.local
+.env.*.local
+
+# ── 向量库持久化（生成物，仅根目录）──
+/chroma_db/
+chroma.sqlite3
+
+# ── 链路追踪日志 / 运行日志 ──
+logs/
+*.log
+
+# ── 本地 ML 模型缓存（可由 export_bgem3_onnx.py 重新生成，仅根目录 models/）──
+# 注意：app/models/ 是代码目录（schemas），不可忽略，故限定根目录
+/models/
+
+# ── 个人工作记忆 / 评测缓存（私有）──
+.workbuddy/
+.deepeval/
+
+# ── 评测运行产物（可重新生成）──
+test_100_queries_result_*.json
+test_100_queries_result_*.xlsx
+
+# ── 临时文件（仅根目录）──
+/pdf_preview.txt
+
+# ── 用户知识库文档（仅保留占位，不上传实际文档）──
+/data/*
+!/data/.gitkeep
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# ── 虚拟环境 ──
+.venv/
+venv/
+
+# ── IDE ──
+.vscode/
+.idea/
+*.swp
+
+# ── 系统 ──
+Thumbs.db
+.DS_Store

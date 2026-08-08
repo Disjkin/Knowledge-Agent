@@ -1,0 +1,21 @@
+fastapi>=0.110
+uvicorn[standard]
+langchain>=0.3
+langchain-core
+langchain-community
+langchain-chroma
+langchain-openai
+langchain-anthropic
+chromadb
+pymupdf
+docx2txt
+unstructured
+python-dotenv
+pydantic-settings
+sentence-transformers
+# ── 网搜兜底 ──
+tavily-python
+duckduckgo-search   # 可选备选 provider
+# ── 混合检索 ──
+rank_bm25
+numpy

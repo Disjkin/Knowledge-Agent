@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Trace Viewer - 链路追踪可视化</title>
+<style>
+:root {
+  --bg: #1e1e2e;
+  --bg-card: #313244;
+  --bg-hover: #45475a;
+  --text: #cdd6f4;
+  --text-muted: #a6adc8;
+  --accent: #89b4fa;
+  --green: #a6e3a1;
+  --red: #f38ba8;
+  --yellow: #f9e2af;
+  --orange: #fab387;
+  --border: #45475a;
+  --code-bg: #181825;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #ffffff;
+    --bg-card: #f7f7f8;
+    --bg-hover: #e5e7eb;
+    --text: #1a1a1a;
+    --text-muted: #6b7280;
+    --accent: #2563eb;
+    --green: #16a34a;
+    --red: #dc2626;
+    --yellow: #ca8a04;
+    --orange: #ea580c;
+    --border: #e5e7eb;
+    --code-bg: #f3f4f6;
+  }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+/* ── 顶部栏 ── */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.header h1 { font-size: 18px; white-space: nowrap; }
+.upload-area {
+  flex: 1;
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  padding: 8px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.upload-area:hover, .upload-area.dragover {
+  border-color: var(--accent);
+  background: rgba(137, 180, 250, 0.08);
+}
+.upload-area input { display: none; }
+
+/* ── 主体布局 ── */
+.main {
+  display: flex;
+  height: calc(100vh - 61px);
+}
+.sidebar {
+  width: 320px;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+.detail {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 32px;
+}
+.empty-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 15px;
+}
+
+/* ── 侧栏 trace 列表 ── */
+.sidebar-header {
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+.trace-item {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.trace-item:hover { background: var(--bg-hover); }
+.trace-item.active { background: var(--bg-card); border-left: 3px solid var(--accent); }
+.trace-item .ti-query {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+}
+.trace-item .ti-meta {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  align-items: center;
+}
+.badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+}
+.badge-ok { background: rgba(166,227,161,0.2); color: var(--green); }
+.badge-error { background: rgba(243,139,168,0.2); color: var(--red); }
+.badge-web { background: rgba(137,180,250,0.2); color: var(--accent); }
+
+/* ── 详情区 ── */
+.trace-header {
+  margin-bottom: 24px;
+}
+.trace-header .th-query {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+.trace-header .th-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.th-meta-item { display: flex; align-items: center; gap: 4px; }
+.th-meta-item code {
+  background: var(--code-bg);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+/* ── 步骤流程图 ── */
+.flow {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  margin-bottom: 32px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+.flow-step {
+  flex-shrink: 0;
+  min-width: 140px;
+  max-width: 200px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  position: relative;
+  cursor: pointer;
+  transition: border-color 0.2s, transform 0.2s;
+}
+.flow-step:hover { border-color: var(--accent); transform: translateY(-2px); }
+.flow-step.error { border-color: var(--red); }
+.flow-arrow {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  font-size: 18px;
+  padding: 0 8px;
+  flex-shrink: 0;
+}
+.flow-step .fs-icon { font-size: 20px; margin-bottom: 6px; }
+.flow-step .fs-name { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.flow-step .fs-duration { font-size: 11px; color: var(--text-muted); }
+.flow-step .fs-status {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 12px;
+}
+
+/* ── 时间线条 ── */
+.timeline {
+  margin-bottom: 32px;
+}
+.timeline-title {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.timeline-bar {
+  display: flex;
+  height: 28px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--code-bg);
+}
+.timeline-segment {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: opacity 0.2s;
+  cursor: pointer;
+}
+.timeline-segment:hover { opacity: 0.85; }
+.timeline-segment.gap {
+  background: var(--code-bg);
+  color: var(--text-muted);
+}
+
+/* ── 步骤卡片 ── */
+.step-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+.step-card.error { border-left: 3px solid var(--red); }
+.step-card.ok { border-left: 3px solid var(--green); }
+.step-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  cursor: pointer;
+  user-select: none;
+}
+.step-card-header:hover { background: var(--bg-hover); }
+.step-card-header .sc-icon { font-size: 18px; }
+.step-card-header .sc-name { font-size: 15px; font-weight: 600; }
+.step-card-header .sc-duration {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+.step-card-header .sc-status { font-size: 14px; }
+.step-card-header .sc-chevron {
+  font-size: 10px;
+  color: var(--text-muted);
+  transition: transform 0.2s;
+}
+.step-card.expanded .sc-chevron { transform: rotate(90deg); }
+.step-card-body {
+  display: none;
+  padding: 0 18px 18px;
+  border-top: 1px solid var(--border);
+}
+.step-card.expanded .step-card-body { display: block; }
+
+/* ── JSON 展示 ── */
+.json-section { margin-top: 14px; }
+.json-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.json-block {
+  background: var(--code-bg);
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-family: "SF Mono", "Consolas", "Monaco", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 400px;
+  overflow-y: auto;
+}
+.json-block .jk { color: var(--accent); }
+.json-block .js { color: var(--green); }
+.json-block .jn { color: var(--orange); }
+.json-block .jb { color: var(--yellow); }
+.json-block .jn-null { color: var(--text-muted); }
+
+/* ── 答案区 ── */
+.answer-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 22px;
+  margin-top: 8px;
+}
+.answer-section .as-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.answer-section .as-content {
+  font-size: 14px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🔍 Trace Viewer</h1>
+  <label class="upload-area" id="upload-area">
+    点击或拖拽上传 JSONL 日志文件
+    <input type="file" id="file-input" accept=".jsonl,.json,.txt" />
+  </label>
+</div>
+
+<div class="main">
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-header">Trace 列表（等待上传）</div>
+  </div>
+  <div class="detail" id="detail">
+    <div class="empty-hint">上传 JSONL 日志文件以查看调用链路</div>
+  </div>
+</div>
+
+<script>
+(() => {
+  // ── 工具配置 ──
+  const STEP_META = {
+    kb_retrieve:  { icon: "📚", label: "知识库检索", color: "#89b4fa" },
+    web_search:   { icon: "🌐", label: "网络搜索",   color: "#fab387" },
+    llm_stream:   { icon: "🤖", label: "LLM 推理",   color: "#a6e3a1" },
+    reply:        { icon: "💬", label: "最终回复",   color: "#f9e2af" },
+  };
+
+  let traces = [];
+  let activeIdx = -1;
+
+  // ── 文件上传 ──
+  const $upload = document.getElementById("upload-area");
+  const $fileInput = document.getElementById("file-input");
+
+  $fileInput.addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (file) loadFile(file);
+  });
+
+  $upload.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    $upload.classList.add("dragover");
+  });
+  $upload.addEventListener("dragleave", () => $upload.classList.remove("dragover"));
+  $upload.addEventListener("drop", (e) => {
+    e.preventDefault();
+    $upload.classList.remove("dragover");
+    const file = e.dataTransfer.files[0];
+    if (file) loadFile(file);
+  });
+
+  function loadFile(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const lines = e.target.result.split("\n").filter((l) => l.trim());
+        traces = lines.map((line) => JSON.parse(line));
+        traces.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+        renderSidebar();
+        if (traces.length > 0) selectTrace(0);
+      } catch (err) {
+        alert("解析失败: " + err.message);
+      }
+    };
+    reader.readAsText(file, "utf-8");
+  }
+
+  // ── 侧栏 ──
+  function renderSidebar() {
+    const $sb = document.getElementById("sidebar");
+    let html = `<div class="sidebar-header">Trace 列表（${traces.length} 条）</div>`;
+    traces.forEach((t, i) => {
+      const query = (t.query || "").slice(0, 50);
+      const time = (t.created_at || "").slice(11, 19);
+      const dur = t.duration_ms != null ? t.duration_ms + "ms" : "?";
+      const statusCls = t.status === "error" ? "badge-error" : "badge-ok";
+      const statusText = t.status === "error" ? "ERR" : "OK";
+      const webBadge = t.used_web_search ? '<span class="badge badge-web">WEB</span>' : "";
+      const active = i === activeIdx ? " active" : "";
+      html += `<div class="trace-item${active}" onclick="selectTrace(${i})">
+        <div class="ti-query">${escHtml(query)}</div>
+        <div class="ti-meta">
+          <span>${time}</span>
+          <span>${dur}</span>
+          <span class="badge ${statusCls}">${statusText}</span>
+          ${webBadge}
+        </div>
+      </div>`;
+    });
+    $sb.innerHTML = html;
+  }
+
+  window.selectTrace = function (idx) {
+    activeIdx = idx;
+    renderSidebar();
+    renderDetail(traces[idx]);
+  };
+
+  // ── 详情区 ──
+  function renderDetail(t) {
+    if (!t) return;
+    const $detail = document.getElementById("detail");
+
+    // 头部信息
+    const query = escHtml(t.query || "");
+    const time = t.created_at || "?";
+    const dur = t.duration_ms != null ? t.duration_ms + "ms" : "?";
+    const model = t.model || "N/A";
+    const historyLen = t.history_len != null ? t.history_len : "?";
+    const statusBadge = t.status === "error"
+      ? '<span class="badge badge-error">ERROR</span>'
+      : '<span class="badge badge-ok">OK</span>';
+    const webBadge = t.used_web_search
+      ? '<span class="badge badge-web">网搜</span>'
+      : '<span class="badge badge-ok">仅KB</span>';
+    const errorBadge = t.error
+      ? `<span class="badge badge-error">${escHtml(t.error)}</span>`
+      : "";
+
+    // 步骤流程图
+    const steps = t.steps || [];
+    let flowHtml = '<div class="flow">';
+    steps.forEach((s, i) => {
+      const meta = STEP_META[s.name] || { icon: "⚙️", label: s.name, color: "#a6adc8" };
+      const cls = s.status === "error" ? " error" : "";
+      const stIcon = s.status === "error" ? "❌" : "✅";
+      flowHtml += `<div class="flow-step${cls}" onclick="toggleStep(${i})">
+        <div class="fs-icon">${meta.icon}</div>
+        <div class="fs-name">${meta.label}</div>
+        <div class="fs-duration">${s.duration_ms || 0}ms</div>
+        <div class="fs-status">${stIcon}</div>
+      </div>`;
+      if (i < steps.length - 1) {
+        flowHtml += '<div class="flow-arrow">→</div>';
+      }
+    });
+    flowHtml += "</div>";
+
+    // 时间线条
+    let timelineHtml = "";
+    if (steps.length > 0 && t.duration_ms > 0) {
+      const total = t.duration_ms;
+      let segs = "";
+      let lastEnd = 0;
+      steps.forEach((s, i) => {
+        const start = i === 0 ? 0 : (s.started_at ? new Date(s.started_at).getTime() - new Date(steps[0].started_at).getTime() : lastEnd);
+        const dur = s.duration_ms || 0;
+        // gap before this step
+        if (start > lastEnd) {
+          const gapPct = ((start - lastEnd) / total) * 100;
+          if (gapPct > 1) segs += `<div class="timeline-segment gap" style="width:${gapPct}%"></div>`;
+        }
+        const pct = Math.max((dur / total) * 100, 2);
+        const meta = STEP_META[s.name] || { color: "#a6adc8" };
+        segs += `<div class="timeline-segment" style="width:${pct}%;background:${meta.color}" title="${s.name}: ${dur}ms">${pct > 8 ? dur + 'ms' : ''}</div>`;
+        lastEnd = start + dur;
+      });
+      timelineHtml = `<div class="timeline">
+        <div class="timeline-title">耗时分布（总 ${total}ms）</div>
+        <div class="timeline-bar">${segs}</div>
+      </div>`;
+    }
+
+    // 步骤卡片
+    let stepsHtml = "";
+    steps.forEach((s, i) => {
+      const meta = STEP_META[s.name] || { icon: "⚙️", label: s.name };
+      const cls = s.status === "error" ? "error" : "ok";
+      const stIcon = s.status === "error" ? "❌" : "✅";
+      const inputsJson = syntaxHighlight(s.inputs);
+      const outputsJson = s.outputs ? syntaxHighlight(s.outputs) : '<span class="jn-null">null</span>';
+      const errorHtml = s.error ? `<div class="json-section"><div class="json-section-title">Error</div><div class="json-block">${escHtml(s.error)}</div></div>` : "";
+
+      stepsHtml += `<div class="step-card ${cls}" id="step-${i}">
+        <div class="step-card-header" onclick="toggleStep(${i})">
+          <span class="sc-icon">${meta.icon}</span>
+          <span class="sc-name">${meta.label} <span style="color:var(--text-muted);font-weight:400;font-size:12px">${s.name}</span></span>
+          <span class="sc-duration">${s.duration_ms || 0}ms</span>
+          <span class="sc-status">${stIcon}</span>
+          <span class="sc-chevron">▶</span>
+        </div>
+        <div class="step-card-body">
+          <div class="json-section">
+            <div class="json-section-title">Inputs（入参）</div>
+            <div class="json-block">${inputsJson}</div>
+          </div>
+          <div class="json-section">
+            <div class="json-section-title">Outputs（返回）</div>
+            <div class="json-block">${outputsJson}</div>
+          </div>
+          ${errorHtml}
+        </div>
+      </div>`;
+    });
+
+    // 最终答案
+    const answer = t.answer || "";
+    const answerHtml = answer
+      ? `<div class="answer-section">
+          <div class="as-title">最终回复</div>
+          <div class="as-content">${escHtml(answer)}</div>
+        </div>`
+      : "";
+
+    $detail.innerHTML = `
+      <div class="trace-header">
+        <div class="th-query">${query}</div>
+        <div class="th-meta">
+          <span class="th-meta-item">🕐 <code>${time}</code></span>
+          <span class="th-meta-item">⏱ <code>${dur}</code></span>
+          <span class="th-meta-item">🤖 <code>${escHtml(model)}</code></span>
+          <span class="th-meta-item">📜 历史 <code>${historyLen}</code> 条</span>
+          <span class="th-meta-item">${statusBadge}</span>
+          <span class="th-meta-item">${webBadge}</span>
+          ${errorBadge ? `<span class="th-meta-item">${errorBadge}</span>` : ""}
+          <span class="th-meta-item">ID <code>${(t.trace_id || "").slice(0, 16)}</code></span>
+        </div>
+      </div>
+      ${flowHtml}
+      ${timelineHtml}
+      ${stepsHtml}
+      ${answerHtml}
+    `;
+  }
+
+  // ── 步骤展开/折叠 ──
+  window.toggleStep = function (idx) {
+    const el = document.getElementById("step-" + idx);
+    if (el) el.classList.toggle("expanded");
+  };
+
+  // ── 工具函数 ──
+  function escHtml(s) {
+    if (s == null) return "";
+    return String(s).replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+    );
+  }
+
+  function syntaxHighlight(obj) {
+    if (obj == null) return '<span class="jn-null">null</span>';
+    const json = JSON.stringify(obj, null, 2);
+    // 逐行处理：先转义 HTML，再高亮 key: value
+    return json.split("\n").map((line) => {
+      const escaped = escHtml(line);
+      // 匹配 "key": value（转义后 " 变成 &quot;）
+      const m = escaped.match(/^(\s*)&quot;(.+?)&quot;:\s*(.*)$/);
+      if (m) {
+        const indent = m[1];
+        const key = m[2];
+        const val = m[3];
+        return `${indent}<span class="jk">&quot;${key}&quot;</span>: ${highlightVal(val)}`;
+      }
+      return escaped;
+    }).join("\n");
+  }
+
+  function highlightVal(val) {
+    const v = val.trim();
+    if (v === "null") return '<span class="jn-null">null</span>';
+    if (v === "true" || v === "false") return `<span class="jb">${v}</span>`;
+    if (/^-?\d+\.?\d*$/.test(v.replace(/,$/, ""))) return `<span class="jn">${v}</span>`;
+    if (v.startsWith("&quot;")) return `<span class="js">${val}</span>`;
+    return val; // [ { } ] 等
+  }
+})();
+</script>
+</body>
+</html>
